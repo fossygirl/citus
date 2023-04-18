@@ -241,6 +241,7 @@ extern Oid DistRebalanceStrategyRelationId(void);
 extern Oid DistLocalGroupIdRelationId(void);
 extern Oid DistObjectRelationId(void);
 extern Oid DistEnabledCustomAggregatesId(void);
+extern Oid DatabaseShardRelationId(void);
 
 /* index oids */
 extern Oid DistNodeNodeIdIndexId(void);
@@ -263,6 +264,7 @@ extern Oid DistTransactionGroupIndexId(void);
 extern Oid DistPlacementGroupidIndexId(void);
 extern Oid DistObjectPrimaryKeyIndexId(void);
 extern Oid DistCleanupPrimaryKeyIndexId(void);
+extern Oid DatabaseShardPrimaryKeyIndexId(void);
 
 /* sequence oids */
 extern Oid DistBackgroundJobJobIdSequenceId(void);
