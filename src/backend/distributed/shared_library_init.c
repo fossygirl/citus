@@ -1076,27 +1076,6 @@ RegisterCitusConfigVariables(void)
 		NULL, NULL, NULL);
 
 	DefineCustomBoolVariable(
-		"citus.enable_database_sharding",
-		gettext_noop("Enables database sharding which places each new database on a "
-					 "different node."),
-		NULL,
-		&EnableDatabaseSharding,
-		false,
-		PGC_SU_BACKEND,
-		GUC_STANDARD,
-		NULL, NULL, NULL);
-
-	DefineCustomStringVariable(
-		"citus.database_sharding_pgbouncer_file",
-		gettext_noop("The path to a file that contains pgbouncer database entries."),
-		NULL,
-		&DatabaseShardingPgBouncerFile,
-		"",
-		PGC_SU_BACKEND,
-		GUC_STANDARD,
-		NULL, NULL, NULL);
-
-	DefineCustomBoolVariable(
 		"citus.defer_drop_after_shard_move",
 		gettext_noop("Deprecated, Citus always defers drop after shard move"),
 		NULL,
@@ -1270,6 +1249,17 @@ RegisterCitusConfigVariables(void)
 		true,
 		PGC_USERSET,
 		GUC_NO_SHOW_ALL,
+		NULL, NULL, NULL);
+
+	DefineCustomBoolVariable(
+		"citus.enable_database_sharding",
+		gettext_noop("Enables database sharding which places each new database on a "
+					 "different node."),
+		NULL,
+		&EnableDatabaseSharding,
+		false,
+		PGC_POSTMASTER,
+		GUC_STANDARD,
 		NULL, NULL, NULL);
 
 	DefineCustomBoolVariable(
