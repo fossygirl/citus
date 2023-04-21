@@ -70,6 +70,7 @@
 #include "distributed/multi_server_executor.h"
 #include "distributed/pg_dist_partition.h"
 #include "distributed/placement_connection.h"
+#include "distributed/pooler/pgbouncer_manager.h"
 #include "distributed/priority.h"
 #include "distributed/query_stats.h"
 #include "distributed/recursive_planning.h"
@@ -169,6 +170,8 @@ static GucStringAssignHook OldApplicationNameAssignHook = NULL;
  * updating the global pid.
  */
 static bool FinishedStartupCitusBackend = false;
+
+char *CitusMainDatabase = "postgres";
 
 static object_access_hook_type PrevObjectAccessHook = NULL;
 
@@ -486,6 +489,7 @@ _PG_init(void)
 	InitializeSharedConnectionStats();
 	InitializeLocallyReservedSharedConnections();
 	InitializeClusterClockMem();
+	InitializeSharedPgBouncerManager();
 
 	/*
 	 * Adjust the Dynamic Library Path to prepend citus_decodes to the dynamic
@@ -601,6 +605,7 @@ citus_shmem_request(void)
 	RequestAddinShmemSpace(MaintenanceDaemonShmemSize());
 	RequestAddinShmemSpace(CitusQueryStatsSharedMemSize());
 	RequestAddinShmemSpace(LogicalClockShmemSize());
+	RequestAddinShmemSpace(SharedPgBouncerManagerShmemSize());
 	RequestNamedLWLockTranche(STATS_SHARED_MEM_NAME, 1);
 }
 
@@ -1070,13 +1075,13 @@ RegisterCitusConfigVariables(void)
 		GUC_NO_SHOW_ALL,
 		NULL, NULL, NULL);
 
-	DefineCustomStringVariable(
-		"citus.database_sharding_control_dbname",
-		gettext_noop("The name of the database that acts as control database "
-					 "for database sharding."),
+	DefineCustomBoolVariable(
+		"citus.enable_database_sharding",
+		gettext_noop("Enables database sharding which places each new database on a "
+					 "different node."),
 		NULL,
-		&DatabaseShardingControlDBName,
-		"",
+		&EnableDatabaseSharding,
+		false,
 		PGC_SU_BACKEND,
 		GUC_STANDARD,
 		NULL, NULL, NULL);
@@ -1085,7 +1090,7 @@ RegisterCitusConfigVariables(void)
 		"citus.database_sharding_pgbouncer_file",
 		gettext_noop("The path to a file that contains pgbouncer database entries."),
 		NULL,
-		&DatabaseShardingPgbouncerFile,
+		&DatabaseShardingPgBouncerFile,
 		"",
 		PGC_SU_BACKEND,
 		GUC_STANDARD,
@@ -1790,6 +1795,17 @@ RegisterCitusConfigVariables(void)
 		GUC_NO_SHOW_ALL | GUC_UNIT_MS,
 		NULL, NULL, NULL);
 
+	DefineCustomStringVariable(
+		"citus.main_database",
+		gettext_noop("Sets the main database of Citus which contains authoritative "
+					 "nodem metadata."),
+		NULL,
+		&CitusMainDatabase,
+		"postgres",
+		PGC_POSTMASTER,
+		GUC_STANDARD,
+		NULL, NULL, NULL);
+
 	DefineCustomIntVariable(
 		"citus.max_adaptive_executor_pool_size",
 		gettext_noop("Sets the maximum number of connections per worker node used by "
@@ -2132,6 +2148,38 @@ RegisterCitusConfigVariables(void)
 		true,
 		PGC_USERSET,
 		GUC_NO_SHOW_ALL,
+		NULL, NULL, NULL);
+
+	DefineCustomIntVariable(
+		"citus.pgbouncer_inbound_port",
+		gettext_noop("Sets the port on which inbound pgbouncer processes "
+					 "should listen."),
+		NULL,
+		&PgBouncerInboundPort,
+		PostPortNumber + 1000, 1, 65546,
+		PGC_POSTMASTER,
+		GUC_STANDARD,
+		NULL, NULL, NULL);
+
+	DefineCustomIntVariable(
+		"citus.pgbouncer_inbound_procs",
+		gettext_noop("Sets the number of inbound pgbouncer processes"),
+		NULL,
+		&PgBouncerInboundProcs,
+		0, 0, PGBOUNCER_INBOUND_PROCS_MAX,
+		PGC_POSTMASTER,
+		GUC_STANDARD,
+		NULL, NULL, NULL);
+
+	DefineCustomStringVariable(
+		"citus.pgbouncer_path",
+		gettext_noop("Sets the path to the pgbouncer executable."),
+		gettext_noop("By default, Citus looks for pgbouncer in the PATH environment "
+					 "variable, but setting an explicit path is recommended."),
+		&PgBouncerPath,
+		"pgbouncer",
+		PGC_POSTMASTER,
+		GUC_STANDARD,
 		NULL, NULL, NULL);
 
 	DefineCustomBoolVariable(
@@ -3045,7 +3093,6 @@ CitusAuthHook(Port *port, int status)
 	 * StartupCitusBackend, which normally sets up the global PID.
 	 */
 	InitializeBackendData(port->application_name);
-
 
 	/* let other authentication hooks to kick in first */
 	if (original_client_auth_hook)
