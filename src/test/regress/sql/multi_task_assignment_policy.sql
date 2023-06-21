@@ -258,4 +258,4 @@ RESET citus.task_assignment_policy;
 RESET client_min_messages;
 
 DROP TABLE task_assignment_replicated_hash, task_assignment_nonreplicated_hash,
-  task_assignment_reference_table, task_assignment_test_table_2, explain_outputs;
+  task_assignment_reference_table, task_assignment_test_table, task_assignment_test_table_2, explain_outputs;
