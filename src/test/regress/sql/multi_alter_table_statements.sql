@@ -645,13 +645,44 @@ ALTER TABLE test_table_1 ADD COLUMN test_col int CHECK (test_col > 3);
 
 CREATE TABLE reference_table(i int UNIQUE);
 SELECT create_reference_table('reference_table');
-ALTER TABLE test_table_1 ADD COLUMN test_col int REFERENCES reference_table(i) ON DELETE CASCADE;
-ALTER TABLE test_table_1 ADD COLUMN test_col int REFERENCES reference_table(i) ON DELETE CASCADE ON UPDATE SET NULL;
-DROP TABLE reference_table;
+
+ALTER TABLE test_table_1 ADD COLUMN test_col_1 int REFERENCES reference_table(i) ON DELETE CASCADE;
+ALTER TABLE test_table_1 ADD COLUMN test_col_2 int REFERENCES reference_table(i) ON DELETE CASCADE ON UPDATE SET NULL;
+
+SELECT result FROM run_command_on_all_nodes(
+$$
+  SELECT jsonb_pretty(jsonb_agg(to_jsonb(q1.*) ORDER BY q1.*)) AS n_fkey_with_config FROM (
+    SELECT COUNT(*) AS count,
+           referencing_columns, referenced_columns, deferable, deferred, on_update, on_delete, match_type, referencing_columns_set_null_or_default
+    FROM (
+      SELECT
+        conname AS constraint_name,
+        conrelid::regclass AS referencing_table,
+        (SELECT array_agg(attname) FROM pg_attribute WHERE attrelid = conrelid AND attnum = ANY(conkey)) AS referencing_columns,
+        confrelid::regclass AS referenced_table,
+        (SELECT array_agg(attname) FROM pg_attribute WHERE attrelid = confrelid AND attnum = ANY(confkey)) AS referenced_columns,
+        condeferrable AS deferable,
+        condeferred AS deferred,
+        confupdtype AS on_update,
+        confdeltype AS on_delete,
+        confmatchtype AS match_type,
+        (SELECT array_agg(attname) FROM pg_attribute WHERE attrelid = conrelid AND attnum = ANY(confdelsetcols)) AS referencing_columns_set_null_or_default
+      FROM pg_constraint WHERE conrelid::regclass::text LIKE 'test_table_1%' AND contype = 'f'
+    ) q2
+    GROUP BY referencing_columns, referenced_columns, deferable, deferred, on_update, on_delete, match_type, referencing_columns_set_null_or_default
+  ) q1;
+$$
+)
+ORDER BY nodeid;
+
+BEGIN;
+  SET LOCAL client_min_messages TO WARNING;
+  DROP TABLE reference_table CASCADE;
+COMMIT;
 
 CREATE TABLE referenced_table(i int UNIQUE);
 SELECT create_distributed_table('referenced_table', 'i');
-ALTER TABLE test_table_1 ADD COLUMN test_col int REFERENCES referenced_table(i);
+ALTER TABLE test_table_1 ADD COLUMN test_col_3 int REFERENCES referenced_table(i);
 DROP TABLE referenced_table, test_table_1;
 
 -- Check sequence propagate its own dependencies while adding a column
